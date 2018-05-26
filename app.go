@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"runtime"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -32,9 +33,10 @@ func main() {
 	flag.Parse()
 	http.HandleFunc("/echo", echoHandler)
 	http.HandleFunc("/bench", benchHandler)
-	http.HandleFunc("/", whoamI)
+	http.HandleFunc("/", whodat)
 	http.HandleFunc("/api", api)
 	http.HandleFunc("/health", healthHandler)
+	http.HandleFunc("/mem", memHandler)
 	fmt.Println("Starting up on port " + port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
@@ -46,12 +48,14 @@ func printBinary(s []byte) {
 	}
 	fmt.Printf("\n")
 }
+
 func benchHandler(w http.ResponseWriter, r *http.Request) {
 	// body := "Hello World\n"
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Content-Type", "text/plain")
 	// fmt.Fprint(w, body)
 }
+
 func echoHandler(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -71,7 +75,7 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func whoamI(w http.ResponseWriter, req *http.Request) {
+func whodat(w http.ResponseWriter, req *http.Request) {
 	u, _ := url.Parse(req.URL.String())
 	queryParams := u.Query()
 	wait := queryParams.Get("wait")
@@ -81,8 +85,10 @@ func whoamI(w http.ResponseWriter, req *http.Request) {
 			time.Sleep(duration)
 		}
 	}
+
 	hostname, _ := os.Hostname()
 	fmt.Fprintln(w, "Hostname:", hostname)
+
 	ifaces, _ := net.Interfaces()
 	for _, i := range ifaces {
 		addrs, _ := i.Addrs()
@@ -98,6 +104,7 @@ func whoamI(w http.ResponseWriter, req *http.Request) {
 			fmt.Fprintln(w, "IP:", ip)
 		}
 	}
+
 	req.Write(w)
 }
 
@@ -156,4 +163,25 @@ func healthHandler(w http.ResponseWriter, req *http.Request) {
 		defer mutexHealthState.RUnlock()
 		w.WriteHeader(currentHealthState.StatusCode)
 	}
+}
+
+func memHandler(w http.ResponseWriter, req *http.Request) {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	// For info on each, see: https://golang.org/pkg/runtime/#MemStats
+	fmt.Fprintf(w, "HeapAlloc: %v KB\n", bToKb(m.HeapAlloc))
+	fmt.Fprintf(w, "HeapInuse: %v KB\n", bToKb(m.HeapInuse))
+	fmt.Fprintf(w, "HeapIdle: %v KB\n", bToKb(m.HeapIdle))
+	fmt.Fprintf(w, "Malloc'd Objects: %v\n", m.Mallocs)
+	fmt.Fprintf(w, "Free'd Objects: %v\n", m.Frees)
+	fmt.Fprintf(w, "Live Objects: %v\n", m.Mallocs-m.Frees)
+	fmt.Fprintf(w, "Lookups: %v\n", m.Lookups)
+	fmt.Fprintf(w, "TotalAlloc: %v KB\n", bToKb(m.TotalAlloc))
+	fmt.Fprintf(w, "Sys: %v KB\n", bToKb(m.Sys))
+	fmt.Fprintf(w, "NumGC: %v\n", m.NumGC)
+}
+
+func bToKb(b uint64) uint64 {
+	return b / 1024
 }
